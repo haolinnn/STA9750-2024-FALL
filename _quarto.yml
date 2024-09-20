@@ -13,5 +13,5 @@ website:
     
 format:
   html:
-    theme: quartz
+    theme: Morph
     toc: false
