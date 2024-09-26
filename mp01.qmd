@@ -12,7 +12,7 @@ Farebox revenues, total number of trips, total number of vehicle miles traveled,
 * The 2022 Operating Expenses reports\
 
 
-### Table *Usage*
+
 
 ```{r echo=FALSE, message=FALSE}
 if(!require("tidyverse")) install.packages("tidyverse")
@@ -117,7 +117,7 @@ sample_n(USAGE, 1000) |>
     DT::datatable()
 ```
 
-### Table *Usage* after Rename and Rocoding
+
 
 ```{r echo=FALSE, message=FALSE}
 # Rename a column: UZA Name to metro_area.
