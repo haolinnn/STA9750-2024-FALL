@@ -1,6 +1,22 @@
+# Mini-project 1: Fiscal Characteristics of Major US Public Transit Systems
+
+## Introduction
+Public transportation is important for daily essential public service for people. For this project, we aim to investigate the fiscal characteristics of US public transit. It is focused on farebox recovery problem, which refers to the fraction of revenues raised from fares instead of taxes. I am going to use data from the National Transit Database as our primary source.
+
+## Key metrics:
+Farebox revenues, total number of trips, total number of vehicle miles traveled, and total revenues and expenses, Unlinked Passenger Trip (UPT), Vehicle Revenue Miles (VRM)
+
+## Data sources:
+* The 2022 Fare Revenue table\
+* The latest Monthly Ridership tables\
+* The 2022 Operating Expenses reports\
+
+
+### Table *Usage*
+
 ```{r echo=FALSE, message=FALSE}
 if(!require("tidyverse")) install.packages("tidyverse")
-
+library(dplyr)
 # Let's start with Fare Revenue
 library(tidyverse)
 
@@ -33,6 +49,30 @@ EXPENSES <- readr::read_csv(expenses_file) |>
 
 # Join the two datasets
 FINANCIALS <- inner_join(FARES, EXPENSES, by = c("NTD ID", "Mode"))
+# recode Mode
+FINANCIALS <- FINANCIALS |>
+  mutate(Mode = case_when(
+    Mode == "DR" ~ "Demand Response",
+    Mode == "MB" ~ "Motorbus",
+    Mode == "CR" ~ "Commuter Rail",
+    Mode == "CC" ~ "Cable Car",
+    Mode == "LR" ~ "Light Rail",
+    Mode == "PB" ~ "Publico",
+    Mode == "SR" ~ "Streetcar Rail",
+    Mode == "VP" ~ "Vanpool",
+    Mode == "CB" ~ "Commuter Bus",
+    Mode == "TB" ~ "Trolleybus",
+    Mode == "FB" ~ "Ferryboat",
+    Mode == "TR" ~ "Aerial Tramway",
+    Mode == "HR" ~ "Heavy Rail",
+    Mode == "MG" ~ "Monorail/Automated Guideway",
+    Mode == "RB" ~ "Bus Rapid Transit",
+    Mode == "OR" ~ "Other Rail",
+    Mode == "YR" ~ "Hybrid Rail",
+    Mode == "AR" ~ "Alaska Railroad",
+    Mode == "IP" ~ "Inclined Plane",
+    TRUE ~ "Unknown"))
+
 
 # Monthly Transit Numbers
 transit_numbers_file <- "/Users/haolin/Desktop/sta9750/ridership.xlsx"
@@ -76,3 +116,217 @@ sample_n(USAGE, 1000) |>
     mutate(month=as.character(month)) |> 
     DT::datatable()
 ```
+
+### Table *Usage* after Rename and Rocoding
+
+```{r echo=FALSE, message=FALSE}
+# Rename a column: UZA Name to metro_area.
+USAGE <- inner_join(TRIPS, MILES, by = c("NTD ID", "Agency", "UZA Name", "Mode", "3 Mode", "month")) |>
+  mutate(`NTD ID` = as.integer(`NTD ID`)) |>
+  rename(metro_area = 'UZA Name') 
+
+# Recoding the Mode column
+## This code needs to be modified
+USAGE <- USAGE |>
+    mutate(Mode=case_when(
+        Mode == "HR" ~ "Heavy Rail", 
+        Mode == "CB" ~ "Commuter Bus",
+        Mode == "DR" ~ "Demand Response",
+        Mode == "FB" ~ "Ferryboat",
+        Mode == "IP" ~ "Inclined Plane",
+        Mode == "LR" ~ "Light Rail", 
+        Mode == "MB" ~ "Bus", 
+        Mode == "MG" ~ "Monorail and Automated Guideway modes",
+        Mode == "PB" ~ "Publico",
+        Mode == "RB" ~ "Bus rapid transit",
+        Mode == "SR" ~ "Streetcar",
+        Mode == "TB" ~ "Trolleybus",
+        Mode == "VP" ~ "Vanpool",
+        Mode == "YR" ~ "Hybrid Rail",
+        Mode == "CR" ~ "Commuter Rail",
+        TRUE ~ "Unknown"))
+
+if(!require("DT")) install.packages("DT")
+library(DT)
+
+sample_n(USAGE, 1000) |> 
+    mutate(month=as.character(month)) |> 
+    DT::datatable()
+
+```
+
+## Task 3 & 4: Answering Questions with dplyr
+3.1. What transit agency had the most total VRM in this sample?\
+VRM refers to Vehicle Revenue Miles, which is how far the transit provider travelled in total. By calculating total VRM and ranging  highest total VRM to lowest, MTA New York City Transit has the most total VRM.
+```{r}
+USAGE |>
+  group_by(Agency) |>                   
+  summarize(total_VRM = sum(VRM, na.rm = TRUE)) |>  
+  arrange(desc(total_VRM)) |>           
+  slice(1)  
+```
+3.2. What transit mode had the most total VRM in this sample?\
+Bus has the most total VRM.
+```{r}
+USAGE |>
+  group_by(Mode) |>                      
+  summarize(total_VRM = sum(VRM, na.rm = TRUE)) |>  
+  arrange(desc(total_VRM)) |>           
+  slice(1)
+```
+3.3. How many trips were taken on the NYC Subway (Heavy Rail) in May 2024?\
+180458819	trips
+```{r}
+library(lubridate)  
+USAGE |>
+  mutate(month = format(ymd(month), "%Y-%m")) |>  # Ensure month is formatted as "YYYY-MM"
+  filter(Mode == "Heavy Rail",                    # Filter for Heavy Rail mode
+         Agency == "MTA New York City Transit",            # Filter for New York metro area
+         month == "2024-05") |>                   # Filter for May 2024
+  summarize(total_trip = sum(UPT, na.rm = TRUE))
+```
+
+
+3.5. How much did NYC subway ridership fall between April 2019 and April 2020?\
+NYC subway ridership fall from 297454074 on April 2019 to 35928277 on April 2020.
+```{r}
+nyc_ridership_fall <- USAGE |>
+  mutate(month = format(ymd(month), "%Y-%m")) |>  
+  filter(Agency == "MTA New York City Transit", 
+         month %in% c("2019-04", "2020-04")) |> 
+  group_by(month) |>
+  summarize(total_UPT = sum(UPT, na.rm = TRUE)) |>
+  arrange(month)
+ridership_fall <- nyc_ridership_fall |>
+  summarize(fall = total_UPT[month == "2019-04"] - total_UPT[month == "2020-04"])
+print(nyc_ridership_fall)
+```
+4.1. What transit agency had the least total VRM?\
+Barnegat Bay Decoy & Baymen's Museum
+```{r}
+USAGE |>
+  group_by(Agency) |>                   
+  summarize(total_VRM = sum(VRM, na.rm = TRUE)) |>  
+  arrange((total_VRM)) |>           
+  slice(1)
+```
+4.2. What transit mode had the least total VRM in this sample?\
+Inclined Plane
+```{r}
+USAGE |>
+  group_by(Mode) |>                      
+  summarize(total_VRM = sum(VRM, na.rm = TRUE)) |>  
+  arrange(total_VRM) |>           
+  slice(1)
+```
+4.3. What transit mode has the most total UPT?\
+Bus
+```{r}
+USAGE |>
+  group_by(Mode) |>
+  summarize(total_UPT = sum(UPT, na.rm = TRUE)) |>
+  arrange(desc(total_UPT)) |>
+  slice(1)
+```
+In summary, bus has the most total UPT and VRM, which means bus is heavily and widely utilized. Bus provide significant services and plays an important roles to public transporation netwok in the US. NYC subway ridership had significant fall from April 2019 to April 2020. The main reason for this was that it was in the pandemic, and most of people were working and studying remotely, so New Yorkers reduced their travel, and then subway usage fell dramatically. The number of NYC subway services also dropped.\
+
+## Task 5: Table Summarization\
+Merge a new table of *Usage* and *FINANCIALS*
+```{r echo=FALSE, message=FALSE}
+#5. new table USAGE_2022_ANNUAL
+
+library(dplyr)
+library(lubridate)
+
+USAGE_2022_ANNUAL <- USAGE |>
+  group_by(`NTD ID`, month, Agency, metro_area, Mode) |>
+  summarize(
+    UPT = sum(UPT, na.rm = TRUE),
+    VRM = sum(VRM, na.rm = TRUE)
+  ) |>
+  ungroup()
+
+
+# merge
+USAGE_AND_FINANCIALS <- left_join(USAGE_2022_ANNUAL, 
+           FINANCIALS, 
+           join_by(`NTD ID`, Mode)) |>
+    drop_na()
+```
+
+
+## Task 6: Farebox Recovery Among Major Systems
+6.1. Which transit system (agency and mode) had the most UPT in 2022?\
+MTA New York City Transit (Heavy rail)
+```{r}
+USAGE_AND_FINANCIALS |>
+  group_by(Agency, Mode) |>
+  summarize(total_UPT = sum(UPT, na.rm = TRUE)) |>
+  arrange(desc(total_UPT)) |>
+  head(1)
+```
+6.2. Which transit system (agency and mode) had the highest farebox recovery, defined as the highest\
+Agency: Butler County Regional Transit Authority, mode: commuter bus
+```{r}
+highest_farebox_recovery <- USAGE_AND_FINANCIALS |>
+  mutate(farebox_recovery = `Total Fares` / Expenses) |>
+  arrange(desc(farebox_recovery)) |>  
+  slice_max(farebox_recovery, n = 1)
+print(highest_farebox_recovery)
+```
+6.3. Which transit system (agency and mode) has the lowest expenses per UPT?\
+Central Oklahoma Transportation
+```{r}
+USAGE_AND_FINANCIALS |>
+  group_by(Agency, Mode) |>
+  summarize(
+    total_UPT = sum(UPT, na.rm = TRUE),
+    total_expenses = sum(Expenses, na.rm = TRUE)
+  ) |>
+  mutate(expenses_per_UPT = total_expenses / total_UPT) |>
+  arrange(expenses_per_UPT) |>
+  head(1)
+```
+6.4. Which transit system (agency and mode) has the highest total fares per UPT?\
+Bay State LLC (ferry boat)
+```{r}
+USAGE_AND_FINANCIALS |>
+  group_by(Agency, Mode) |>
+  summarize(
+    total_UPT = sum(UPT, na.rm = TRUE),
+    total_fares = sum(`Total Fares`, na.rm = TRUE)
+  ) |>
+  mutate(fares_per_UPT = total_fares / total_UPT) |>
+  arrange(desc(fares_per_UPT)) |>
+  head(1)
+```
+6.5. Which transit system (agency and mode) has the lowest expenses per VRM?\
+Central Oklahoma Transportation
+```{r}
+USAGE_AND_FINANCIALS |>
+  group_by(Agency, Mode) |>
+  summarize(
+    total_VRM = sum(VRM, na.rm = TRUE),
+    total_expenses = sum(Expenses, na.rm = TRUE)
+  ) |>
+  mutate(expenses_per_VRM = total_expenses / total_VRM) |>
+  arrange(expenses_per_VRM) |>
+  head(1)
+```
+6.6. Which transit system (agency and mode) has the highest total fares per VRM?\
+Jacksonville Transportation Authority
+```{r}
+USAGE_AND_FINANCIALS |>
+  group_by(Agency, Mode) |>
+  summarize(
+    total_VRM = sum(VRM, na.rm = TRUE),
+    total_fares = sum(`Total Fares`, na.rm = TRUE)
+  ) |>
+  mutate(fares_per_VRM = total_fares / total_VRM) |>
+  arrange(desc(fares_per_VRM)) |>
+  head(1)
+```
+The farebox recovery ratio represents the percentage of operating expenses covered by fare revenues. A higher ratio indicates that the transit system is more self-sustaining through its fare revenue. Compared to other systems, Butler County Regional Transit Authority, with its commuter bus service, recovers a larger portion of its operating expenses and has a greater ability to sustain itself through fare revenue. On the other hand, Central Oklahoma Transportation operates cost-efficiently, with lower expenses per UPT and VRM, offering services at reduced operating costs.
+
+## Summary
+Low expenses per UPT indicate that the agency can transport passengers at a lower cost per trip, resulting in reduced costs per passenger and potentially higher revenues, leading to an improved farebox recovery ratio. Similarly, low expenses per VRM suggest that the transportation service operates at a lower cost per mile, enabling the agency to cover a wider area with reduced operating expenses. The lower the expenses, the more cost-efficient the agency becomes, which in turn increases revenue. Therefore, I believe Central Oklahoma Transportation will be the most efficient agency in the country, with the lowest expenses per UPT and VRM.
