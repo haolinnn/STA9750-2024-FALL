@@ -1,0 +1,537 @@
+# Mini-Project 2: The Business of Show Business\
+
+## Data:
+For this project, I will use use data from the Internet Movie Database (IMDb). The data sets are included basic information of actors/directors/writers, information of the projects, and the ratings and numbers of votes. I will use the following data sets to do analysis.\
+Data sets:\
+NAME_BASICS: nconst, names, birth year, death year, project tconst of the actors/directors/writers related to all projects.\
+TITLE_BASICS: the title name, start year, end year, tconst of the projects, genres, in what decade the project was made.\
+TITLE_EPISODES: tconst and season number of the projects.\
+TITLE_RATINGS: tconst, ratings, number of votes of the projects.\
+TITLE_CREW: the directors and writers name of the projects.\
+TITLE_PRINCIPALS: corresponding person nconst and category.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(stringr)
+
+library(gt)
+get_imdb_file <- function(fname, path){
+    fname_ext <- file.path(path, paste0(fname, ".csv"))
+    as.data.frame(readr::read_csv(fname_ext, lazy=FALSE))
+}
+
+# Example usage: specify the path where your CSV files are stored
+path <- "/Users/haolin/Desktop/sta9750"
+
+NAME_BASICS      <- get_imdb_file("name_basics", path)
+TITLE_BASICS     <- get_imdb_file("title_basics", path)
+TITLE_EPISODES   <- get_imdb_file("title_episodes", path)
+TITLE_RATINGS    <- get_imdb_file("title_ratings", path)
+TITLE_CREW       <- get_imdb_file("title_crew", path)
+TITLE_PRINCIPALS <- get_imdb_file("title_principals", path)
+```
+## Data subsampling:
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+NAME_BASICS <- NAME_BASICS |> 
+    filter(str_count(knownForTitles, ",") > 1)
+
+TITLE_RATINGS |>
+    ggplot(aes(x=numVotes)) + 
+    geom_histogram(bins=30) +
+    xlab("Number of IMDB Ratings") + 
+    ylab("Number of Titles") + 
+    ggtitle("Majority of IMDB Titles Have Less than 100 Ratings") + 
+    theme_bw() + 
+    scale_x_log10(label=scales::comma) + 
+    scale_y_continuous(label = scales::comma)
+
+TITLE_RATINGS |>
+    pull(numVotes) |>
+    quantile()
+
+TITLE_BASICS <- TITLE_BASICS |>
+    semi_join(TITLE_RATINGS, 
+              join_by(tconst == tconst))
+
+TITLE_CREW <- TITLE_CREW |>
+    semi_join(TITLE_RATINGS, 
+              join_by(tconst == tconst))
+
+TITLE_EPISODES_1 <- TITLE_EPISODES |>
+    semi_join(TITLE_RATINGS, 
+              join_by(tconst == tconst))
+TITLE_EPISODES_2 <- TITLE_EPISODES |>
+    semi_join(TITLE_RATINGS, 
+              join_by(parentTconst == tconst))
+
+TITLE_EPISODES <- bind_rows(TITLE_EPISODES_1,
+                            TITLE_EPISODES_2) |>
+    distinct()
+
+TITLE_PRINCIPALS <- TITLE_PRINCIPALS |>
+    semi_join(TITLE_RATINGS, join_by(tconst == tconst))
+
+
+rm(TITLE_EPISODES_1)
+rm(TITLE_EPISODES_2)
+```
+
+## Initial Exploration\
+Mutate column birthYear and deathYear to numeric type.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+#Initial Exploration
+NAME_BASICS <- NAME_BASICS |>
+    mutate(birthYear = as.numeric(birthYear),
+           deathYear = as.numeric(deathYear))
+```
+
+
+## Task 1: Column Type Correction\
+In data set TITLE_BASICS, correct column startYear, endYear, runtimeMinutes to numeric type; column isAudlt to logical type.\
+In data set TITLE_EPISODES, correct column seasonNumber and episodeNumber to numeric type.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+TITLE_BASICS <- TITLE_BASICS |>
+    mutate(startYear = as.numeric(startYear),
+           endYear = as.numeric(endYear),
+           runtimeMinutes = as.numeric(runtimeMinutes),
+           isAdult = as.logical(isAdult))
+
+TITLE_EPISODES <- TITLE_EPISODES |>
+    mutate(seasonNumber = as.numeric(seasonNumber),
+           episodeNumber = as.numeric(episodeNumber))
+
+glimpse(NAME_BASICS)
+```
+Use the separate_longer_delim function to break these into multiple rows: 
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+
+NAME_BASICS |> separate_longer_delim(knownForTitles, ",") |> slice_head(n=10)
+
+
+```
+## Task 2
+2.1 How many movies are in our data set? How many TV series? How many TV episodes?\
+# There are 131662 movies, 29789 TV series, and 155722 TV episodes.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+movies <- TITLE_BASICS |>
+  filter(titleType == "movie") |>
+  count()
+print(movies)
+
+TVseries <- TITLE_BASICS |>
+  filter(titleType == "tvSeries") |>
+  count()
+print(TVseries)
+
+TVepisodes <- TITLE_BASICS |>
+  filter(titleType == "tvEpisode") |>
+  count()
+print(TVepisodes)
+
+counts_df <- data.frame(
+  Category = c("movie", "tvSeries", "tvEpisodes"),
+  Count = c(movies, TVseries, TVepisodes)
+)
+counts_df |>
+  gt() |>
+  tab_header(
+    title = "Count of Movies, TV Series, and TV Episodes"
+  )
+```
+
+2.2 Who is the oldest living person in our data set?\
+Eva Marie Saint
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+current_year = 2024
+living_people <- NAME_BASICS |>
+  filter(is.na(deathYear)) |>
+  filter(birthYear >= (current_year - 100)) |>
+  arrange(birthYear) |>
+  select(nconst, primaryName, birthYear) |>
+  slice (1)
+
+
+living_people |>
+  gt() |>
+  tab_header(title = "The Oldest Living Person")
+```
+
+2.3 There is one TV Episode in this data set with a perfect 10/10 rating and 200,000 IMDb ratings. What is it? What series does it belong to?\
+Ozymandias
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+perfect_tv_episode <- TITLE_RATINGS |>
+    filter(averageRating == 10, numVotes >= 200000) |>
+    left_join(TITLE_BASICS, by = "tconst") |>
+    select(title = primaryTitle, genres)
+
+
+perfect_tv_episode |>
+  gt() |>
+  tab_header(title = "Perfect TV Episode")
+```
+2.4 What four projects is the actor Mark Hammill most known for?\
+"Corey Anders", "Paul Swensen", "Ken Newkirk", "Eugene Banks". Most are TV series.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+mark_hamill_projects <- NAME_BASICS |> 
+    filter(primaryName == "Mark Hamill") |> 
+    select(nconst) |> 
+    left_join(TITLE_PRINCIPALS, by = "nconst") |> 
+    left_join(TITLE_BASICS, by = "tconst") |> 
+    select (characters, titleType, primaryTitle, startYear, endYear, genres) |>
+    slice_head(n = 4)
+
+mark_hamill_projects |>
+  gt() |>
+  tab_header(title = "Projects Mark Hammill is Most Known For")
+```
+
+2.5 What TV series, with more than 12 episodes, has the highest average rating?\
+TV series, Craft Games.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+tv_series <- TITLE_BASICS |>
+  filter(titleType == "tvSeries")
+
+episode_count <- TITLE_EPISODES |>
+  group_by(parentTconst) |>
+  summarise(num_episodes = n()) |>
+  filter(num_episodes > 12) 
+
+series_with_episodes <- inner_join(tv_series, episode_count, by = c("tconst" = "parentTconst"))
+
+series_ratings <- inner_join(series_with_episodes, TITLE_RATINGS, by = "tconst")
+
+
+best_series <- series_ratings |>
+  arrange(desc(averageRating)) |>
+  select(tconst, titleType, primaryTitle, averageRating, num_episodes) |>
+  slice(1)
+
+best_series |>
+  gt() |>
+  tab_header(title = "Best Series")
+```
+2.6 Is it true that episodes from later seasons of Happy Days have lower average ratings than the early seasons?\
+Yes, episodes from later seasons of Happy Days have lower average ratings than the early seasons. Early season have average ratings of 7.47, while later season have average ratings of 6.872.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+happy_days_tconst <- TITLE_BASICS |>
+  filter(primaryTitle == "Happy Days") |>
+  select(tconst)
+
+happy_days_episode <- TITLE_EPISODES |>
+  filter(parentTconst %in% happy_days_tconst$tconst) |>
+  inner_join(TITLE_RATINGS, by = "tconst") |>
+  mutate(seasonNumber = as.integer(seasonNumber))
+
+happy_days_episode <- happy_days_episode |>
+  mutate (season_group = ifelse(seasonNumber <= 5, "Early", "Later"))
+
+early_seasons <- happy_days_episode |>
+  filter(seasonNumber <= 5)
+later_seasons <- happy_days_episode |>
+  filter(seasonNumber > 5) 
+
+early_avg <- mean(early_seasons$averageRating, na.rm = TRUE)
+later_avg <- mean(later_seasons$averageRating, na.rm = TRUE)
+
+cat("Average rating for early seasons (1-5):", early_avg, "\n")
+cat("Average rating for later seasons (6+):", later_avg, "\n")
+
+if (later_avg < early_avg) {
+  cat("Yes, episodes from later seasons of Happy Days have lower average ratings than the early seasons.\n")
+} else {
+  cat("No, episodes from later seasons of Happy Days do not have lower average ratings than the early seasons.\n")
+}
+
+
+```
+
+## Task 3: Custom Success Metric
+I define success metric with formula "success = 0.7 * averageRating + 0.3 * log(numVotes)", and return a success threshold with 7.44.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+TITLE_RATINGS <- TITLE_RATINGS |>
+  mutate(success = 0.7 * averageRating + 0.3 * log(numVotes))
+
+#validate the metric: top 5 movies
+top_movies <- TITLE_RATINGS |>
+  arrange(desc(success)) |>
+  slice(1:10)
+print(top_movies)
+# 3-5 movies with high votes and success
+low_quality_high_votes <- TITLE_RATINGS |>
+  filter(numVotes > 100000) |>
+  arrange(success) |>
+  slice(1:5)
+print(low_quality_high_votes)
+
+# onfirm that they have many projects with high scores on your success metric.
+marlon_nconst <- NAME_BASICS |>
+  filter(primaryName == "Marlon Brando") |>
+  select(nconst)
+marlon_projects <- TITLE_CREW |>
+  filter(grepl(marlon_nconst$nconst, directors)) |>
+  select(tconst)
+marlon_ratings <- marlon_projects |>
+  inner_join(TITLE_RATINGS, by = "tconst") |>
+  inner_join(TITLE_BASICS, by = "tconst") |>
+  filter(titleType == "movie") |>
+  arrange(desc(success))
+marlon_ratings |>
+  select(primaryTitle, averageRating, numVotes, success) |>
+  slice(1:10)
+ 
+#Perform at least one other form of ‘spot check’ validation.
+random_spot_check <- TITLE_RATINGS |>
+  filter(numVotes > 5000) |>
+  sample_n(5)
+
+#success threshold
+success_threshold <- quantile(TITLE_RATINGS$success, 0.80)
+
+cat("Movies with success score above", success_threshold, "are considered solid or better.\n")
+
+threshold_df <- data.frame(
+  Metric = "Success Threshold",
+  Value = success_threshold
+)
+threshold_df |>
+  gt() |>
+  tab_header(title = "success threshold")
+```
+
+## Task 4: Trends in Success Over Time\
+First, create bar chart that shows genres with successes per decade and a bar chart that summarize the sum of the success for the top genres. Using these two graphs to answer the questions.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+TITLE_BASICS <- TITLE_BASICS |>
+  mutate(decade = floor(startYear / 10) * 10)
+# Filter for movies above success threshold (>7.30)
+successful_movies <- TITLE_RATINGS |>
+  filter(success > success_threshold) |>
+  inner_join(TITLE_BASICS, by = "tconst") |>
+  filter(titleType == "movie")
+```
+Graph: Top Genres with Most Successes Per Decade
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+success_by_genre_decade <- successful_movies %>%
+  separate_rows(genres, sep = ",") %>% # Split multiple genres
+  group_by(decade, genres) %>%
+  summarize(success_count = n(), .groups = 'drop') %>%
+  arrange(desc(success_count))
+library(ggplot2)
+ggplot(success_by_genre_decade, aes(x = decade, y = success_count, fill = genres)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Top Genres Per Decade", x = "Decade", y = "Success Count") +
+  theme_minimal()
+```
+Graph: Top Genre by Decade
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+TITLE_BASICS <- TITLE_BASICS |>
+  mutate(decade = floor(startYear / 10) * 10)
+
+top_genres_by_decade <- TITLE_BASICS |>
+  left_join(TITLE_RATINGS, by = "tconst") |>
+  group_by(decade, genres) |>
+  summarise(success_count = sum(success, na.rm = TRUE), .groups = 'drop') |>
+  arrange(decade, desc(success_count)) |>
+  group_by(decade) |> 
+  slice(1)
+
+ggplot(top_genres_by_decade, aes(x = factor(decade), y = success_count, fill = genres)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Top Genre by Decade",
+      x = "dacade",
+      y = "numbers") +
+  theme_minimal ()
+```
+Questions and answers:\
+4.1. What was the genre with the most “successes” in each decade?\
+For this question, I merge TITLE_BASICS and TITLE_RATINGS tables and calculate the total number of successful movies per genre for each decade, then sort the genres by the number of successes and select the top genre. \
+Based on the bar chart:\
+In 1930s and 1940s, animation, comedy, and family were the most success.\
+In 1950s and 1960s, western was the most success.\
+In 1970s to 2010s, comedy was the most success.\
+In 2020s, drama was the most success.\
+
+4.2. What genre consistently has the most “successes”? What genre used to reliably produced “successes” and has fallen out of favor?\
+Comedy is the gerne has the most successes. It dominates from 1970s to 2010s, which shows comedy was very attrative to the audience across the time. \
+Western used to be the most success for two decades, but it has fallen out of favor, and shows the decline in popularity.\
+
+4.3. What genre has produced the most “successes” since 2010? Does it have the highest success rate or does it only have a large number of successes because there are many productions in that genre?\
+Since 2010, drama has produced the most success. To find if it has the highest success rate or just a large number of successes, I calculate the success production of drama and the success rate, showing that it have the highest success rate.\
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+drama <- TITLE_BASICS |>
+  left_join(TITLE_RATINGS, by = "tconst") |>   # Join ratings to basics
+  filter(str_detect(genres, "Drama")) |>        # Filter for Drama genre
+  summarise(
+    total_productions = n(),                    # Total number of drama productions
+    successful_productions = sum(success, na.rm = TRUE),  # Count successful projects
+    success_rate = successful_productions / total_productions * 100  # Calculate success rate
+  )
+
+drama |>
+  gt() |>
+  tab_header(title = "Drama Score")
+```
+
+4.4. What genre has become more popular in recent years?\
+Drama.\
+
+## Task 5: Successful Personnel in the Genre \
+Actor 1: Meryl Streep\
+Actor 2: Florence Pugh\
+Director: Greta Gerwig\
+
+Meryl Streep is one of the world's most respected actors, with a wealth of experience in delivering emotionally charged roles on screen. She has a high average rating of 7.12 and has received 5,535,415 votes.\
+
+Florence Pugh is one of the most popular actress in recent year. She is a new generation actress who has gained appreciation from the audience by acting in dramas. Her acting brings new energy and emotional expression to the projects. She has an average rating of 6.9 and has received more than 2,510,055 votes.\
+
+Greta Gerwig is a highly acclaimed director with a lot of success in drama films. She has an average rating of 6.38 and has received more than 3,446,905 votes.\
+
+Meryl Streep, an actress with a lot of experience in dramas and Florence Pugh, a new generation of actors with new energy, their collaboration will bring more vitality and a clash of different types of acting styles to the movie. Together with director Greta Gerwig, who has a lot of experience in directing drama, the movie will resonate with the audience and lead to a success.\
+
+Below are the graph of average ratings for two actors and the director, and a table of summary of the numbers of votes:
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+actors_director <- NAME_BASICS |>
+  filter(primaryName %in% c("Meryl Streep", "Florence Pugh", "Greta Gerwig")) |>
+  select(nconst, primaryName) |> 
+    left_join(TITLE_PRINCIPALS, by = "nconst") |> 
+    left_join(TITLE_RATINGS, by = "tconst")
+
+actors_director_ratings <- actors_director |>
+  group_by(primaryName) |>
+  summarise(
+    avg_IMDb_rating = mean(averageRating, na.rm = TRUE),
+    total_votes = sum(numVotes, na.rm = TRUE)
+  )
+
+
+  
+ggplot(actors_director_ratings, aes(x = primaryName, y = avg_IMDb_rating, fill = primaryName)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Average IMDb Rating of actors/director",
+       x = "actors/director",
+       y = "Average IMDb Rating") +
+  theme_minimal()
+
+actors_director_ratings |>
+  gt() |>
+  tab_header(title = "Summary of Ratings")
+
+success_percentage <- actors_director |>
+  group_by(primaryName) |> 
+  summarise(
+    total_projects = n(),
+    successful_projects = sum(success >= success_threshold, na.rm = TRUE),
+    success_percentage = (successful_projects / total_projects) * 100
+  )
+success_percentage |>
+  gt() |>
+  tab_header(title = "Success Percentage for Actos/Director")
+```
+
+## Task 6: Finding a Classic Movie to Remake
+I choose movie "The Shawshank Redemption" from the classic movies top 10, which was in the 1990s, and has average rating of 9.3. 
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+classic_movies <- TITLE_BASICS |>
+  filter(genres == "Drama", startYear <= 1999) |>  # Movies older than 25 years
+  left_join(TITLE_RATINGS, by = "tconst") |>
+  filter(averageRating >= 7.5, numVotes >= 10000) |>
+  arrange(desc(averageRating))
+
+# Display top classic drama movies
+classic_movies <- head(classic_movies, 10)
+
+classic_movies |>
+  gt() |>
+  tab_header(title = "Top 10 Classic Movies")
+```
+Verified all the key actors, directors, or writers from the original are still alive.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+#check if the origin is alive
+
+chosen_film <- TITLE_BASICS |>
+  filter(primaryTitle == "The Shawshank Redemption")
+
+# Get the tconst for the film
+film_tconst <- chosen_film$tconst
+
+# Use the tconst to find associated actors, directors, and writers in title_principal
+film_talent <- TITLE_PRINCIPALS %>%
+  filter(tconst == film_tconst) %>%
+  left_join(NAME_BASICS, by = "nconst") %>%
+  select(primaryName, birthYear, deathYear, primaryProfession)
+
+# Check if original talent is still alive
+living_talent <- film_talent %>%
+  filter(is.na(deathYear))  # No death year means they are still alive
+
+
+living_talent |>
+  gt() |>
+  tab_header(title = "Key Actors/Directors/Writers Info")
+```
+
+## Task 7: Elevator Pitch
+Drama has been the most successful film genre since 2010 and 2020, with consistent box office results and word-of-mouth. We have chosen to remake films in the Drama genre. We propose to remake "The Shawshank Redemption", which received an average rating of 9.4 and is one of the most popular and critically acclaimed films in cinematic history.\
+
+Our remake will be directed by director Greta Gerwig. She has an average IMDb rating of 7.12, one of the higher ratings. She will bring her unique narrative perspective to directing the film, shooting it with a fresh and modern approach, and making sure that the adaptation respects the original.\
+
+Our remake will star Meryl Streep and Florence Pugh, two famous Hollywood actors. Meryl Streep is a movie icon with a 54.47% success rate and an average rating of 7.12 on IMDb. Florence Pugh is one of the most popular young actors of our time, with a 56.25% success rate and an average IMDb rating of 6.9, and she will add more youthful ideas and interpretations to this classic tale. Their collaboration will bring more vitality and a clash of different acting styles to the movie.\
+
+"From director Greta Gerwig, the visionary mind between "Little Women"; and From actor Florence Pugh, beloved star of "Little Women"; and From actor Meryl Streep, Hollywood icon of genre Drama, Comes the timeless tail "The Shawshank Redemption", a story of hope and friendship, coming soon to a theater near you."
