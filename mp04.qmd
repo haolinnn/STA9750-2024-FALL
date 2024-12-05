@@ -1,0 +1,267 @@
+# Mini-Project #4 - Monte Carlo-Informed Selection of CUNY Retirement Plans
+
+## Introduction
+New hired faculty at the City University of New York (CUNY) have 30 days to choose from one of two retirement plans. This required faculty to make a choice through financial projections. The best retirement plan will depend on starting salary, projections of future salary increases, current age and expected retirement age, stock market returns, inflation, and other factors. In this project, I will analyze factors such as inflation, salary growth, and personal risk acceptance to make at an optimal decision.
+
+Load all package needed:
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(stringr)
+library(lubridate)
+library(gt)
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+install.packages("httr2")
+library(httr2)
+```
+
+## Background
+The Power of Compound Interest:
+When investments are made early, the money faculty put into retirement savings grows, as does the income earned during the investment process.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+#two year of compounded growth
+RETIREMENT <- data.frame(
+    r = rnorm(24, mean=0.5) / 100, # Monthly returns
+    C = rep(100, 24),            # Monthly savings: 100 per month
+    period = 1:24                # Period ID (# of months)
+)
+
+RETIREMENT |> 
+    mutate(net_total_return = order_by(desc(period), 
+                                       cumprod(1 + lead(r, default=0)))) |>
+    summarize(future_value = sum(C * net_total_return))
+
+```
+
+## Task 1: AlphaVantage API Key
+Registered for AlphaVantage API Key, and read it into R.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+key_path <- "/Users/haolin/Desktop/sta9750/AlphaVantage_API.txt"
+alpha_vantage_key <- readLines(key_path)
+
+```
+
+## Task 2: FRED API Key
+Registered for FRED API Key, and read it into R.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+key_path <- "/Users/haolin/Desktop/sta9750/fred_API.txt"
+fred_key <- readLines(key_path)
+
+```
+
+
+## Bootstrap Resampling
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+set.seed(100)
+DATA <- rchisq(250, df=pi, ncp = exp(2))
+SAMPLE_MEDIAN <- median(DATA)
+
+TRUE_MEDIAN <- median(rchisq(5e7, df=pi, ncp = exp(2)))
+
+B <- 500 # Number of boostrap samples to create
+n <- length(DATA) # Original data size
+
+expand_grid(B = 1:B, 
+            n = 1:n) |>
+    # Notice here we sample _with replacement_ from DATA
+    mutate(x = sample(DATA, n(), replace = TRUE)) |>
+    group_by(B) |>
+    summarize(f_boot = median(x)) |>
+    summarize(var_f = var(f_boot)) |>
+    pull(var_f)
+
+1/(4 * n * dchisq(TRUE_MEDIAN, df=pi, ncp = exp(2))^2)
+
+var(replicate(10000, {
+    median(rchisq(250, df=pi, ncp = exp(2)))
+}))
+
+x <- rchisq(100, df=3, ncp=2)
+y <- x * sin(2 * x) + 15 * log(x)
+plot(x, y)
+
+cor(x, y, method="kendall")
+stopifnot(length(x) == length(y))
+n_samp <- length(x)
+n_boot <- 400
+
+data.frame(x = x, y = y) |>
+    slice_sample(n = n_samp * n_boot, 
+                 replace=TRUE) |>
+    mutate(resample_id = rep(1:n_boot, times=n_samp)) |>
+    group_by(resample_id) |>
+    summarize(kendall_cor = cor(x, y, method="kendall")) |>
+    summarize(var(kendall_cor))
+
+var(replicate(5000, {
+    x <- rchisq(100, df=3, ncp=2)
+    y <- x * sin(2 * x) + 15 * log(x)
+    cor(x, y, method="kendall")
+}))
+
+```
+
+## Task 3: Data Acquisition
+**Data from AlphaVantage: Inflation:**\
+This API returns the annual inflation rates (consumer prices) of the United States by months.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+ALPHAVANTAGE_URL <- "https://www.alphavantage.co"
+# Make the request to fetch inflation data
+inflation_file <- request(ALPHAVANTAGE_URL) |>
+  req_url_path("query") |>
+  req_url_query(`function` = "INFLATION",  # Specify the 'INFLATION' function
+                apikey = alpha_vantage_key,
+                datatype = "csv") |>
+  req_perform()
+inflation_data <- read_csv(resp_body_string(inflation_file))
+head_inflation_data <- head(inflation_data)
+
+head_inflation_data |>
+  gt() |>
+  tab_header(title = "Inflation")
+
+```
+
+**Data series from FRED: Unweighted Median Hourly Wage Growth: Overall**\
+This data is the median of the year-over-year percent change in hourly wage rates by month.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+FRED_URL <- "https://api.stlouisfed.org/fred/series/observations"
+
+# Make the request (replace with your FRED API key)
+wage_growth_fred <- request(FRED_URL) |>
+  req_url_query(series_id = "FRBATLWGTUMHWGO",  # FRED series ID
+                api_key = fred_key,
+                file_type = "json") |>
+  req_perform()
+wage_growth_data <- wage_growth_fred |> resp_body_json()
+
+# Extract the observations list from the JSON data
+observations <- wage_growth_data$observations
+
+# Create a data frame from the observations
+wage_growth_df <- tibble(
+  date = as.Date(sapply(observations, function(x) x$date)),  # Extract dates
+  wage_growth = as.numeric(sapply(observations, function(x) x$value))  # Extract values
+)
+
+# Verify the structure of the data
+head_wage_growth <- head(wage_growth_df)
+
+head_wage_growth |>
+  gt() |>
+  tab_header(title = "Wage Growth")
+```
+
+## Task 4: Initial Analysis
+### Compute long-run monthly average
+Long-run average inflation = 3.77%: it is calculated as the average of the monthly inflation rates across the dataset. It represents the rate which at which prices for goods and services have increased over the observed period. It measures the price stability of the economy and can provide an influential factor in the calculation of retirement plans.\
+Long-run average wage growth = 3.79%: it represents typical rate of wage growth over the observed period and provides a baseline for evaluating future changes in wage trends.\
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+#inflation data
+inflation_monthly <- inflation_data |>
+  mutate(month = floor_date(timestamp, "month")) |>  # Extract month
+  group_by(month) |>
+  summarize(avg_inflation = mean(value, na.rm = TRUE)) |>  # Compute monthly average
+  ungroup()
+# Compute long-run averages for inflation
+long_run_inflation <- mean(inflation_monthly$avg_inflation, na.rm = TRUE)
+
+
+#wage growth data
+wage_growth_monthly <- wage_growth_df |>
+  mutate(month = floor_date(date, "month")) |>
+  group_by(month) |>
+  summarize(avg_wage_growth = mean(wage_growth, na.rm = TRUE)) |>  # Compute monthly average
+  ungroup()
+
+# Compute long-run averages for wage growth
+long_run_wage_growth <- mean(wage_growth_monthly$avg_wage_growth, na.rm = TRUE)
+
+
+#join both tables
+combined_data <- inner_join(inflation_monthly, wage_growth_monthly, by = "month")
+# Compute correlation
+correlation <- cor(combined_data$avg_inflation, combined_data$avg_wage_growth, use = "complete.obs")
+correlation
+
+summary_table <- data.frame(
+  Metric = c("Long-Run Average Inflation", "Long-Run Average Wage Growth", "Correlation"),
+  Value = c(long_run_inflation, long_run_wage_growth, correlation)
+)
+
+summary_table |>
+  gt() |>
+  tab_header(title = "Long-Run Average and Correlation")
+```
+### Monthly averages over time for both inflation and wage growth
+Both inflation and wage growth are fluctuated over the observed period. They both affected by the economic and policy. For example, in 2008 to 2009, both inflation and wage growth drop sharply, reflecting a weakened economy. In 2020 to 2022 (pandemic and post-pandemic), inflation increases, but the wage growth decreases and then increases. Over time, wage growth and inflation are correlated, but are subject to small or large fluctuations by the economy, which needs to be taken into account when making retirement plan decisions.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+ggplot(combined_data, aes(x = month)) +
+  geom_line(aes(y = avg_inflation, color = "Inflation")) +
+  geom_line(aes(y = avg_wage_growth, color = "Wage Growth")) +
+  labs(title = "Inflation and Wage Growth Over Time",
+       x = "Month",
+       y = "Value",
+       color = "Legend") +
+  theme_minimal()
+
+
+```
+### Correlation between inflation and wage growth:
+The correlation coefficient between wage growth and inflation is 0.47, indicating a moderate positive relationship. This suggests that, although the relationship is not perfectly linear, on average, wage growth tends to increase as inflation rises somehow.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+ggplot(combined_data, aes(x = avg_inflation, y = avg_wage_growth)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "blue", se = FALSE) +
+  labs(title = "Correlation Between Inflation and Wage Growth",
+       x = "Average Inflation",
+       y = "Average Wage Growth") +
+  theme_minimal()
+
+
+```
+## Task 5: Historical Comparison
+Assuming starting salary = $20/hour, working hour per year = 40hr/week * 50weeks = 2000 hours.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+
+#starting salary for one year
+starting_salary <- 20 * 2000  # $20/hour × 2000 hours/year
+years <- nrow(wage_growth_df)
+#annual salary from wage growth data
+wage_growth_rate <- wage_growth_df$wage_growth / 100  # Convert percentages to decimals
+annual_salaries <- cumprod(1 + wage_growth_rate) * starting_salary
+
+```
