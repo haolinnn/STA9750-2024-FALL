@@ -1,4 +1,9 @@
-# Mini-Project #4 - Monte Carlo-Informed Selection of CUNY Retirement Plans
+---
+title: "Mini-Project #4 - Monte Carlo-Informed Selection of CUNY Retirement Plans"
+author: "Haolin Mo"
+editor: visual
+---
+
 
 ## Introduction
 New hired faculty at the City University of New York (CUNY) have 30 days to choose from one of two retirement plans. This required faculty to make a choice through financial projections. The best retirement plan will depend on starting salary, projections of future salary increases, current age and expected retirement age, stock market returns, inflation, and other factors. In this project, I will analyze factors such as inflation, salary growth, and personal risk acceptance to make at an optimal decision.
