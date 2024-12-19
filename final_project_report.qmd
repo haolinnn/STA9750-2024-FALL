@@ -9,7 +9,7 @@ author:
 output: html_document
 ---
 
-## Overarching Question: How have delays, on-time performance, and safety incidents influenced the efficiency of subway lines across NYC boroughs from 2020 to 2024?
+# Overarching Question: How have delays, on-time performance, and safety incidents influenced the efficiency of subway lines across NYC boroughs from 2020 to 2024?
 
 ## Motivations
 
@@ -144,3 +144,4 @@ Analyzing subway performance prior to the pandemic is vital for establishing a b
 ### Variations Across Subway Lines and Boroughs
 
 Further research should explore performance differences across subway lines and boroughs. Factors like infrastructure quality, line age, and service frequency affect service consistency. Older subway lines or those with outdated infrastructure tend to experience more maintenance issues and delays. Identifying these disparities allows for targeted solutions, such as infrastructure upgrades, more frequent service on high-demand routes, or new trains for aging lines.
+
