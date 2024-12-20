@@ -67,7 +67,7 @@ The analysis of subway delay trends, comparing the COVID and Post-COVID periods,
 
 Furthermore,the animated plot was created to show how total delays changed monthly for both peak and off-peak periods. The plot revealed several trends, including a significant drop in delays during the early months of 2020, followed by a surge in delays as the city reopened and ridership increased. First quarter of 2020 saw a significant drop in delays due to the NYC shutdown in response to the pandemic. Mid-2021 marked the highest surge in delays, coinciding with the city's phased reopening and increased ridership.
 
-Please go to this [link](https://chloe384.github.io/STA9750-2024-FALL/individual.html) for more detailed analysis.
+Please go to this [link](https://chloe384.github.io/STA9750-2024-FALL/final_project.html) for more detailed analysis.
 
 ### How have safety incidents (Persons on Trackbed/Police/Medical) reported to the MTA changed between COVID and Post-COVID?
 
